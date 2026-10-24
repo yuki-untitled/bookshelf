@@ -16,6 +16,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
         <div className="stack">
           <div className="stack" style={{ gap: "var(--sp-2)" }}>
             <h1>{book.title}</h1>
+            {book.altTitle && <p className="muted small">{book.altTitle}</p>}
             {book.authors.length > 0 && <p className="muted">{book.authors.join("、")}</p>}
             <div className="row">
               <StatusBadge status={book.status} inline />

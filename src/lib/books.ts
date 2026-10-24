@@ -7,6 +7,7 @@ export { STATUSES, STATUS_LABEL, STATUS_ICON, type Status };
 export type Book = {
   id: number;
   title: string;
+  altTitle: string | null;
   authors: string[];
   publisher: string | null;
   publishedOn: string | null;
@@ -30,6 +31,7 @@ function toBook(r: Row): Book {
   return {
     id: r.id as number,
     title: r.title as string,
+    altTitle: r.alt_title as string | null,
     authors: JSON.parse(r.authors as string) as string[],
     publisher: r.publisher as string | null,
     publishedOn: r.published_on as string | null,
@@ -65,8 +67,8 @@ export function listBooks({ q, status, owned, sort = "newest" }: ListQuery): Boo
   const args: (string | number)[] = [];
   if (q) {
     const like = `%${escapeLike(q)}%`;
-    where.push("(title LIKE ? ESCAPE '\\' OR authors LIKE ? ESCAPE '\\')");
-    args.push(like, like);
+    where.push("(title LIKE ? ESCAPE '\\' OR alt_title LIKE ? ESCAPE '\\' OR authors LIKE ? ESCAPE '\\')");
+    args.push(like, like, like);
   }
   if (status) {
     where.push("status = ?");
@@ -111,6 +113,7 @@ export function findByIsbn(isbn: string, excludeId?: number): Book | null {
 function values(b: BookInput) {
   return [
     b.title,
+    b.altTitle,
     JSON.stringify(b.authors),
     b.publisher,
     b.publishedOn,
@@ -129,9 +132,9 @@ function values(b: BookInput) {
 export function insertBook(b: BookInput): number {
   const res = db()
     .prepare(
-      `INSERT INTO books (title, authors, publisher, published_on, isbn, pages, cover_url,
+      `INSERT INTO books (title, alt_title, authors, publisher, published_on, isbn, pages, cover_url,
          description, owned, status, rating, review, finished_on)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(...values(b));
   return Number(res.lastInsertRowid);
@@ -140,7 +143,7 @@ export function insertBook(b: BookInput): number {
 export function updateBook(id: number, b: BookInput): void {
   db()
     .prepare(
-      `UPDATE books SET title = ?, authors = ?, publisher = ?, published_on = ?, isbn = ?,
+      `UPDATE books SET title = ?, alt_title = ?, authors = ?, publisher = ?, published_on = ?, isbn = ?,
          pages = ?, cover_url = ?, description = ?, owned = ?, status = ?, rating = ?,
          review = ?, finished_on = ? WHERE id = ?`,
     )

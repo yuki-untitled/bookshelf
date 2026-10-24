@@ -9,6 +9,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS books (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   title        TEXT NOT NULL,
+  alt_title    TEXT,
   authors      TEXT NOT NULL DEFAULT '[]',
   publisher    TEXT,
   published_on TEXT,
@@ -35,6 +36,9 @@ export function db(): DatabaseSync {
     const d = new DatabaseSync(DB_PATH);
     d.exec("PRAGMA journal_mode = WAL");
     d.exec(SCHEMA);
+    // 既存の DB には別タイトルの列が無いため、追加する
+    const cols = d.prepare("PRAGMA table_info(books)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "alt_title")) d.exec("ALTER TABLE books ADD COLUMN alt_title TEXT");
     globalForDb.bookshelfDb = d;
   }
   return globalForDb.bookshelfDb;

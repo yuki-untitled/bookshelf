@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanName, lookupIsbn, normalizeDate, parseGoogle, parseNdl, parseOpenBd } from "./lookup";
+import { cleanName, lookupIsbn, normalizeDate, parseGoogle, parseNdl, parseOpenBd, splitParallelTitle } from "./lookup";
 
 const ISBN = "9784101092058";
 
@@ -43,7 +43,7 @@ const GOOGLE_JSON = JSON.stringify({
 
 const OPENBD_JSON = JSON.stringify([
   {
-    summary: { title: "ONE PIECE", volume: "100", publisher: "集英社", pubdate: "20210104", cover: "https://cover.openbd.jp/x.jpg", author: "尾田, 栄一郎" },
+    summary: { title: "ONE PIECE 100", volume: "4476", series: "ジャンプコミックス", publisher: "集英社", pubdate: "20210104", cover: "https://cover.openbd.jp/x.jpg", author: "尾田, 栄一郎" },
     onix: {
       DescriptiveDetail: {
         Contributor: [{ PersonName: { content: "尾田, 栄一郎, 1975-" } }],
@@ -83,10 +83,37 @@ describe("cleanName", () => {
   });
 });
 
+// 仕様: docs/spec/isbn-lookup.md#受入基準 28,29
+describe("splitParallelTitle", () => {
+  it("並列タイトルを別タイトルに分け、末尾の巻数を本タイトルに移す", () => {
+    expect(splitParallelTitle("楽園ノイズ = Paradise NoiSe. 8")).toEqual({ title: "楽園ノイズ 8", altTitle: "Paradise NoiSe." });
+  });
+  it("巻数が無ければ、別タイトルをそのまま分ける", () => {
+    expect(splitParallelTitle("ハリー・ポッターと賢者の石 = Harry Potter and the Philosopher's Stone")).toEqual({
+      title: "ハリー・ポッターと賢者の石",
+      altTitle: "Harry Potter and the Philosopher's Stone",
+    });
+  });
+  it("副題（ : ）はタイトルに残す", () => {
+    expect(splitParallelTitle("魔人の箱庭 : 囚われの淫花")).toEqual({ title: "魔人の箱庭 : 囚われの淫花", altTitle: null });
+  });
+  it("副題と並列タイトルが両方あっても、最初の ' = ' で分ける", () => {
+    expect(splitParallelTitle("本タイトル : 副題 = Main title : Subtitle 3")).toEqual({
+      title: "本タイトル : 副題 3",
+      altTitle: "Main title : Subtitle",
+    });
+  });
+  it("' = ' を含まないタイトルは変更しない", () => {
+    expect(splitParallelTitle("鬼滅の刃 1")).toEqual({ title: "鬼滅の刃 1", altTitle: null });
+    expect(splitParallelTitle("A=B")).toEqual({ title: "A=B", altTitle: null });
+  });
+});
+
 describe("parseNdl", () => {
   it("ISBN が一致する中で、項目がいちばん多く埋まっている版を使う", () => {
     expect(parseNdl(NDL_XML, ISBN)).toEqual({
       title: "新編銀河鉄道の夜",
+      altTitle: null,
       authors: ["宮沢 賢治"],
       publisher: "新潮社",
       publishedOn: "1992-11",
@@ -98,6 +125,13 @@ describe("parseNdl", () => {
   it("ISBN が一致する本が無ければ null", () => {
     expect(parseNdl(NDL_XML, "9784000000000")).toBeNull();
   });
+  it("巻次があれば、タイトルの末尾に付ける", () => {
+    const xml = `<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.0"><channel><item>
+      <dc:title>楽園ノイズ</dc:title><dcndl:volume>8</dcndl:volume><dc:creator>杉井, 光</dc:creator>
+      <dc:publisher>KADOKAWA</dc:publisher><dc:identifier xsi:type="dcndl:ISBN">9784049521351</dc:identifier>
+    </item></channel></rss>`;
+    expect(parseNdl(xml, "9784049521351")).toMatchObject({ title: "楽園ノイズ 8", altTitle: null, authors: ["杉井 光"] });
+  });
   it("結果が0件なら null", () => {
     expect(parseNdl('<rss version="2.0"><channel></channel></rss>', ISBN)).toBeNull();
   });
@@ -107,6 +141,7 @@ describe("parseGoogle", () => {
   it("書誌情報を取り出し、表紙は https にする", () => {
     expect(parseGoogle(GOOGLE_JSON, ISBN)).toEqual({
       title: "Error-correction coding",
+      altTitle: null,
       authors: ["George C. Clark", "J. Bibb Cain"],
       publisher: "Plenum Press",
       publishedOn: "1981-05",
@@ -127,9 +162,10 @@ describe("parseGoogle", () => {
 });
 
 describe("parseOpenBd", () => {
-  it("巻数をタイトルに付け、内容紹介・ページ数・表紙を取り出す", () => {
+  it("タイトルに volume（レーベル内の通し番号）を足さず、内容紹介・ページ数・表紙を取り出す", () => {
     expect(parseOpenBd(OPENBD_JSON)).toEqual({
       title: "ONE PIECE 100",
+      altTitle: null,
       authors: ["尾田 栄一郎"],
       publisher: "集英社",
       publishedOn: "2021-01-04",
@@ -137,6 +173,12 @@ describe("parseOpenBd", () => {
       coverUrl: "https://cover.openbd.jp/x.jpg",
       description: "海賊王に、おれはなる!",
     });
+  });
+  it("並列タイトルを別タイトルに分ける。volume（レーベル内の通し番号）は足さない", () => {
+    const json = JSON.stringify([
+      { summary: { title: "楽園ノイズ = Paradise NoiSe. 8", volume: "4476", series: "電撃文庫", publisher: "KADOKAWA", pubdate: "202607", cover: "" } },
+    ]);
+    expect(parseOpenBd(json)).toMatchObject({ title: "楽園ノイズ 8", altTitle: "Paradise NoiSe." });
   });
   it("該当なし（[null]）は null", () => {
     expect(parseOpenBd("[null]")).toBeNull();

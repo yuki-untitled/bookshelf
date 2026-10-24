@@ -96,6 +96,7 @@ function parse(fd: FormData, excludeId?: number): { input?: BookInput; state?: F
   return {
     input: {
       title,
+      altTitle: str(fd, "altTitle") || null,
       authors,
       publisher: str(fd, "publisher") || null,
       publishedOn,
@@ -152,4 +153,70 @@ export async function lookupIsbnAction(raw: string): Promise<LookupState> {
   const result = await lookupIsbn(isbn);
   if (result.kind === "found") return { status: "found", isbn, source: result.sources.map((id) => SOURCE_LABEL[id]).join("、"), info: result.info };
   return { status: result.kind, isbn };
+}
+
+// 仕様: docs/spec/isbn-lookup.md#実現内容（What）（所有確認。本は登録せず、結果だけを返す）
+export type CheckState =
+  | {
+      status: "registered";
+      book: { id: number; title: string; coverUrl: string | null; readingStatus: Status; owned: boolean };
+    }
+  | { status: "unregistered"; isbn: string; info: BookInfo; source: string }
+  | { status: "no-info"; isbn: string }
+  | { status: "error"; isbn: string }
+  | { status: "invalid" };
+
+export async function checkIsbnAction(raw: string): Promise<CheckState> {
+  const isbn = normalizeIsbn(String(raw));
+  if (!isbn) return { status: "invalid" };
+  const book = findByIsbn(isbn);
+  if (book) {
+    return {
+      status: "registered",
+      book: { id: book.id, title: book.title, coverUrl: book.coverUrl, readingStatus: book.status, owned: book.owned },
+    };
+  }
+  const result = await lookupIsbn(isbn);
+  if (result.kind === "found") {
+    return { status: "unregistered", isbn, info: result.info, source: result.sources.map((id) => SOURCE_LABEL[id]).join("、") };
+  }
+  return { status: result.kind === "notfound" ? "no-info" : "error", isbn };
+}
+
+export type ScanRegisterState =
+  | { status: "ok"; id: number; title: string }
+  | { status: "duplicate"; id: number; title: string }
+  | { status: "invalid" };
+
+function optStr(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+// 仕様: docs/spec/isbn-lookup.md#受入基準 17,25（「読みたい」で登録する。書誌情報なしならタイトルは ISBN）
+export async function registerScannedAction(raw: string, owned: boolean, info: BookInfo | null): Promise<ScanRegisterState> {
+  const isbn = normalizeIsbn(String(raw));
+  if (!isbn) return { status: "invalid" };
+  const dup = findByIsbn(isbn);
+  if (dup) return { status: "duplicate", id: dup.id, title: dup.title };
+
+  const pages = Number(info?.pages);
+  const title = optStr(info?.title) ?? isbn;
+  const id = insertBook({
+    title,
+    altTitle: optStr(info?.altTitle),
+    authors: Array.isArray(info?.authors) ? info.authors.map(optStr).filter((a): a is string => !!a) : [],
+    publisher: optStr(info?.publisher),
+    publishedOn: optStr(info?.publishedOn),
+    isbn,
+    pages: Number.isInteger(pages) && pages >= 1 ? pages : null,
+    coverUrl: /^https?:\/\/\S+$/.test(optStr(info?.coverUrl) ?? "") ? optStr(info?.coverUrl) : null,
+    description: optStr(info?.description),
+    owned: owned === true,
+    status: "want",
+    rating: null,
+    review: null,
+    finishedOn: null,
+  });
+  revalidatePath("/");
+  return { status: "ok", id, title };
 }

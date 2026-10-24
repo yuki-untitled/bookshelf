@@ -4,6 +4,7 @@ import { normalizeIsbn } from "./isbn";
 
 export type BookInfo = {
   title: string;
+  altTitle: string | null;
   authors: string[];
   publisher: string | null;
   publishedOn: string | null;
@@ -79,6 +80,23 @@ function nonEmpty(info: BookInfo): number {
   ).length;
 }
 
+// 仕様: docs/spec/isbn-lookup.md#制約・関連機能（タイトルの整形）
+// 「本タイトル = 並列タイトル」を、タイトルと別タイトルに分ける。並列タイトルの末尾の巻数は、本タイトルの末尾に移す。
+// 例: 「楽園ノイズ = Paradise NoiSe. 8」→ タイトル「楽園ノイズ 8」、別タイトル「Paradise NoiSe.」
+// 「 : 」以降の副題は、タイトルに残す。
+export function splitParallelTitle(raw: string): { title: string; altTitle: string | null } {
+  const i = raw.indexOf(" = ");
+  if (i < 0) return { title: raw.trim(), altTitle: null };
+  let title = raw.slice(0, i).trim();
+  let alt = raw.slice(i + 3).trim();
+  const volume = alt.match(/\s(\d+)$/);
+  if (volume) {
+    title = `${title} ${volume[1]}`;
+    alt = alt.slice(0, volume.index).trim();
+  }
+  return { title, altTitle: alt || null };
+}
+
 // --- 国立国会図書館サーチ（OpenSearch・XML）---
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", parseTagValue: false });
@@ -92,10 +110,13 @@ export function parseNdl(body: string, isbn: string): BookInfo | null {
       String((i as Json)["@_xsi:type"] ?? "").includes("ISBN"),
     );
     if (!ids.some((i) => normalizeIsbn(str(i) ?? "") === isbn)) continue;
-    const title = str(item["dc:title"]);
-    if (!title) continue;
+    const baseTitle = str(item["dc:title"]);
+    if (!baseTitle) continue;
+    // 巻次は別の項目で返るため、タイトルの末尾に付ける
+    const volume = str(item["dcndl:volume"]);
     candidates.push({
-      title,
+      title: volume ? `${baseTitle} ${volume}` : baseTitle,
+      altTitle: null,
       authors: arr(item["dc:creator"] as unknown)
         .map((c) => cleanName(str(c) ?? ""))
         .filter(Boolean),
@@ -130,6 +151,7 @@ export function parseGoogle(body: string, isbn: string): BookInfo | null {
   const thumb = str((v.imageLinks as Json | undefined)?.thumbnail);
   return {
     title,
+    altTitle: null,
     authors: arr(v.authors as string[] | undefined).map((a) => a.trim()).filter(Boolean),
     publisher: str(v.publisher),
     publishedOn: normalizeDate(str(v.publishedDate)),
@@ -156,9 +178,10 @@ export function parseOpenBd(body: string): BookInfo | null {
   const descriptive = (onix.DescriptiveDetail ?? {}) as Json;
   const collateral = (onix.CollateralDetail ?? {}) as Json;
 
-  const baseTitle = str(summary.title);
-  if (!baseTitle) return null;
-  const volume = str(summary.volume);
+  // 巻数は summary.title にすでに含まれる（例: 「鬼滅の刃 1」）。summary.volume は文庫レーベル内の
+  // 通し番号（例: 「4476」「R182-3」）で巻数ではないため、タイトルには足さない。
+  const title = str(summary.title);
+  if (!title) return null;
 
   let authors = arr(descriptive.Contributor as Json | Json[] | undefined)
     .map((c) => cleanName(str(((c.PersonName ?? {}) as Json).content) ?? ""))
@@ -174,8 +197,10 @@ export function parseOpenBd(body: string): BookInfo | null {
     arr(descriptive.Extent as Json | Json[] | undefined).find((e) => e.ExtentType === "11")?.ExtentValue,
   );
 
+  const { title: mainTitle, altTitle } = splitParallelTitle(title);
   return {
-    title: volume ? `${baseTitle} ${volume}` : baseTitle,
+    title: mainTitle,
+    altTitle,
     authors,
     publisher: str(summary.publisher),
     publishedOn: normalizeDate(str(summary.pubdate)),
