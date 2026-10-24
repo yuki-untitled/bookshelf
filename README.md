@@ -2,7 +2,7 @@
 
 自分専用の本棚Webサイト。蔵書と読書記録を一箇所に集約し、書店でバーコードを読み取って、同じ本を持っているかをその場で確認できる。
 
-> 現在は仕様策定の段階で、実装はまだない。仕様は `develop` ブランチの [docs/spec/](docs/spec/) にある。
+> 仕様は `develop` ブランチの [docs/spec/](docs/spec/) にある。実装済みは、本の登録・一覧・詳細・編集・削除（読書ステータス・評価・レビューを含む）と、登録画面での ISBN 取得・バーコード読み取り。
 
 ## 目的
 
@@ -24,6 +24,63 @@
 - 本人以外のアクセスは、アプリの外側（公開経路の入口）で遮断する。
 - バックアップの取得と復元ができる。
 - ホーム画面からの起動は、オフライン動作を含まない。
+
+## 開発
+
+Node.js 24 以上が必要。技術スタックは Next.js（App Router）と SQLite（Node.js 標準の `node:sqlite`）。
+
+```bash
+npm install
+npm run dev        # 開発サーバー（http://localhost:3000）
+npm run build && npm run start   # 本番起動
+```
+
+| 環境変数 | 内容 |
+|---|---|
+| `BOOKSHELF_DB` | データの保存先。省略時は `data/bookshelf.db` |
+| `GOOGLE_BOOKS_API_KEY` | Google Books の API キー（任意）。キー無しでは利用回数の上限に達することがある |
+
+バーコード読み取りはカメラを使うため、HTTPS（または localhost）で開く必要がある。
+
+```bash
+npm test           # 単体テスト
+```
+
+## 書誌情報の取得元（API）
+
+ISBN から書誌情報を取得するために、次の3つの API を使う。いずれもサーバー側（Next.js のサーバー処理）から呼び出す。
+
+| 取得元 | 呼び出し先 | API キー | 取得できる項目 |
+|---|---|---|---|
+| [openBD](https://openbd.jp/) | `https://api.openbd.jp/v1/get?isbn=<ISBN>` | 不要 | タイトル・著者・出版社・出版日・表紙・あらすじ（版元が登録した分のみ） |
+| [Google Books](https://developers.google.com/books/docs/v1/using) | `https://www.googleapis.com/books/v1/volumes?q=<ISBN>` | 推奨（下記） | タイトル・著者・出版社・出版日・ページ数・表紙・あらすじ |
+| [国立国会図書館サーチ](https://ndlsearch.ndl.go.jp/help/api/specifications) | `https://ndlsearch.ndl.go.jp/api/opensearch?isbn=<ISBN>` | 不要 | タイトル・著者・出版社・出版日・ページ数（表紙・あらすじは無い） |
+
+### 問い合わせの順と補完
+
+1. openBD → Google Books → 国立国会図書館 の順に問い合わせ、書誌情報が最初に見つかった取得元を「主」とする。接続できなかった取得元は飛ばす。
+2. 主で表紙画像またはあらすじが空なら、主より後ろの取得元で、空の項目だけを補う。主の値は上書きしない。
+3. 国立国会図書館は、表紙もあらすじも無く応答も遅い（5〜10秒かかることがある）ため、補うための問い合わせには使わない。
+
+詳細は [docs/spec/isbn-lookup.md](docs/spec/isbn-lookup.md) を参照。
+
+### Google Books の API キー
+
+キー無しでも呼び出せるが、キー無しの共有枠は利用回数の上限（429 エラー）に達することがあり、動作が安定しない。キーを設定すると、自分専用の枠（1日1,000件前後）を使える。
+
+1. Google Cloud Console でプロジェクトを作成する。
+2. 「Books API」を有効にする。
+3. 「認証情報」から API キーを作成し、API の制限を「Books API」のみにする。
+4. `.env.example` をコピーして `.env.local` を作り、`GOOGLE_BOOKS_API_KEY=` の右辺にキーを書く。
+5. サーバーを再起動する。
+
+`.env.local` は `.gitignore` で除外されており、コミットされない。キーをコードやチャットに書かないこと。画面の項目名は変わることがあるため、最新の手順は [Google の公式ドキュメント](https://developers.google.com/books/docs/v1/using) を確認する。
+
+### 利用上の注意
+
+- **国立国会図書館**: 短時間に連続してリクエストすると 429（リクエスト過多）が返る。1冊ずつ登録する通常の使い方では問題にならない。大量の本をまとめて取り込む機能を作るときは、間隔をあける。
+- **Google Books**: `isbn:` や `intitle:` のような絞り込み付きの検索は、結果が0件になることがあった。そのため ISBN をそのままキーワードにして検索し、返ってきた本の ISBN が一致するものだけを使う。日本の本は、ISBN で見つからないことが多い。
+- **障害時**: 接続できなかった取得元は、サーバーのログ（`[lookup] ...`）に残る。3つとも接続できなければ「取得に失敗しました」と表示し、手入力に切り替えられる。
 
 ## 開発方針
 
