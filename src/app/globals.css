@@ -419,7 +419,7 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
-.bottom-nav a {
+.bottom-nav > a {
   flex: 1;
   max-width: 200px;
   min-height: var(--nav-h);
@@ -433,7 +433,7 @@ textarea {
   font-size: var(--fs-sm);
 }
 
-.bottom-nav a[aria-current="page"] {
+.bottom-nav > a[aria-current="page"] {
   color: var(--text);
   font-weight: 700;
 }
@@ -535,4 +535,112 @@ textarea {
 .row.nowrap > input {
   flex: 1;
   min-width: 0;
+}
+
+/* 所有確認ボタン: 下部ナビゲーション中央に目立たせる（アクセントはボタンに使う） */
+.bottom-nav .nav-scan {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  margin-top: -20px;
+  border-radius: 50%;
+  border: 4px solid var(--bg);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.nav-scan-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* 所有確認の結果: 全画面のカメラ映像の下部に重ねる。3つの結果は無彩色の明暗と記号で区別する */
+.scan-result-wrap {
+  position: absolute;
+  left: var(--sp-3);
+  right: var(--sp-3);
+  bottom: calc(var(--sp-4) + env(safe-area-inset-bottom));
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.scan-result {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+}
+
+.result-wait {
+  background: rgba(14, 14, 16, 0.88);
+  color: var(--text);
+  text-align: center;
+}
+
+/* 所有している: 明るい背景 */
+.result-owned {
+  background: #ececee;
+  color: #0e0e10;
+  border-color: #ececee;
+}
+
+.result-owned a {
+  color: #0e0e10;
+}
+
+/* 登録済み・未所有: 一段持ち上げた面と明るい枠 */
+.result-registered {
+  background: #26262a;
+  color: var(--text);
+  border-color: var(--text);
+}
+
+/* 未登録: 暗い背景と破線の枠 */
+.result-new {
+  background: #0e0e10;
+  color: var(--text);
+  border: 2px dashed var(--text-sub);
+}
+
+.result-head {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.result-body {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+
+.result-cover {
+  flex: none;
+  width: 64px;
+}
+
+.result-title {
+  margin: 0;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.scan-result p {
+  margin: 0 0 var(--sp-1);
+}
+
+.result-actions {
+  margin-top: var(--sp-3);
+}
+
+.result-owned .small {
+  color: #3a3a40;
 }

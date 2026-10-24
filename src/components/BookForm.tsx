@@ -22,6 +22,7 @@ function initialValues(book?: Book): Record<string, string> {
   if (!book) return { status: "want" };
   return {
     title: book.title,
+    altTitle: book.altTitle ?? "",
     authors: book.authors.join(", "),
     publisher: book.publisher ?? "",
     publishedOn: book.publishedOn ?? "",
@@ -59,8 +60,9 @@ export function BookForm({ action, book, submitLabel, cancelHref, lookup }: Prop
     if (r.status === "found") {
       setField("isbn", r.isbn);
       // 取得できなかった項目は空欄にする（補完しない）
-      const { title, authors, publisher, publishedOn, pages, coverUrl, description } = r.info;
+      const { title, altTitle, authors, publisher, publishedOn, pages, coverUrl, description } = r.info;
       setField("title", title);
+      setField("altTitle", altTitle ?? "");
       setField("authors", authors.join(", "));
       setField("publisher", publisher ?? "");
       setField("publishedOn", publishedOn ?? "");
@@ -147,6 +149,11 @@ export function BookForm({ action, book, submitLabel, cancelHref, lookup }: Prop
           <label htmlFor="title">タイトル（必須）</label>
           <input id="title" name="title" type="text" defaultValue={v.title ?? ""} aria-invalid={!!err.title} />
           {err.title && <span className="field-error">⚠ {err.title}</span>}
+        </div>
+
+        <div className="field wide">
+          <label htmlFor="altTitle">別タイトル（外国語表記など。任意）</label>
+          <input id="altTitle" name="altTitle" type="text" defaultValue={v.altTitle ?? ""} />
         </div>
 
         <div className="field wide">
